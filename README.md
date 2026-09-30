@@ -291,7 +291,7 @@ Antivirüs yazılımları bu tür davranışları zaman zaman şüpheli olarak d
 
 Uygulamada bu nedenle şu önlemler uygulanır:
 
-- Derleme tek dosya (`onefile`) olarak hazırlanır ve UPX ile sıkıştırılır.
+- Derleme tek dosya (`onefile`) olarak hazırlanır (Qt6 DLL'leri CFG korumalı olduğundan UPX etkisizdir, bu yüzden UPX kullanılmaz).
 - EXE dosyasına ürün, sürüm ve yayımcı bilgileri eklenir (`version_info.txt`).
 - Dosya silme ve kaldırma işlemleri kullanıcı onayıyla yapılır.
 - Program kendiliğinden dosya silmez.
@@ -358,7 +358,7 @@ dist\ETA-USB-Kaydedici.exe
 
 Uygulama tek dosya olarak çalışır. Kurulum gerekmez.
 
-> Not: CI'da kullanılan tam derleme komutu UPX sıkıştırma ve gereksiz Qt modüllerinin çıkarılmasını da içerir. Güncel tam komut için `.github/workflows/build-windows.yml` dosyasına bakın.
+> Not: CI'da kullanılan tam derleme komutu gereksiz Qt modüllerinin çıkarılmasını da içerir (`--collect-all PySide6` kullanılmaz; UPX kullanılmaz çünkü Qt6 CFG'li DLL'lerde etkisizdir). Güncel tam komut için `.github/workflows/build-windows.yml` dosyasına bakın.
 
 ---
 

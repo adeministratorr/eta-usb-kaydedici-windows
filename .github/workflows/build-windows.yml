@@ -32,17 +32,15 @@ jobs:
         run: |
           python -c "import ast,glob; [ast.parse(open(f,encoding='utf-8').read()) for f in glob.glob('src/*.py')]; print('syntax OK')"
 
-      - name: Install UPX
-        run: choco install upx -y
-
       - name: Build EXE
         run: |
           python -m PyInstaller --noconfirm --onefile --windowed --uac-admin --name "ETA-USB-Kaydedici" `
             --version-file version_info.txt `
             --icon assets/logo.ico `
             --add-data "assets;assets" `
-            --collect-all PySide6 `
-            --upx-exclude "vcruntime*.dll" --upx-exclude "msvcp*.dll" `
+            --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebEngineCore `
+            --hidden-import PySide6.QtWebChannel --hidden-import PySide6.QtNetwork `
+            --hidden-import PySide6.QtPrintSupport `
             --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick `
             --exclude-module PySide6.QtQuickWidgets --exclude-module PySide6.Qt3DCore `
             --exclude-module PySide6.Qt3DRender --exclude-module PySide6.Qt3DInput `
