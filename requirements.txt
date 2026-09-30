@@ -1,0 +1,10 @@
+# ETA USB Kaydedici - Windows gereksinimleri
+# Dogrulama notu: passlib + bcrypt>=4.1 BIRLIKTE BOZUK (ValueError: 72 bytes).
+# Yerelde reproduce edildi -> pin zorunlu.
+PySide6>=6.6
+PySide6-Addons>=6.6
+requests>=2.31
+psutil>=5.9
+passlib==1.7.4
+bcrypt==4.0.1
+pywin32>=306; sys_platform == "win32"
