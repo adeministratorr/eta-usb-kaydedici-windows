@@ -1,5 +1,7 @@
 # ETA USB Kaydedici (Windows)
 
+![ETA USB Kaydedici — Artık Windows'ta](assets/tanitim.png)
+
 Pardus ETAP kullanılan etkileşimli tahtalarda USB bellekle oturum açmak için kullanılan **ETA USB Kaydedici'nin Windows sürümü**.
 
 **USB anahtarınızı Windows bilgisayardan da hazırlayabilirsiniz.**
