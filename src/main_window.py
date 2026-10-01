@@ -246,6 +246,8 @@ class EbaLoginDialog(QDialog):
         self.resize(960, 680)
         self.token = ""
         self.view = None
+        self._loaded_once = False
+        self._retry_attempted = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -308,7 +310,7 @@ class EbaLoginDialog(QDialog):
             layout.addWidget(btns)
             return
 
-        # WebEngine Gorunumu (1. Oneri: view'in kendi sayfasi ve profili uzerinden yapilandirma)
+        # WebEngine Gorunumu (view'in kendi sayfasi ve profili uzerinden yapilandirma)
         # Sahiplik (ownership) ve IPC kopmasi riskini sifirlar, NoCache ve cerez izolasyonu korunur.
         self.view = QWebEngineView(self)
         self.profile = None
@@ -328,8 +330,6 @@ class EbaLoginDialog(QDialog):
                         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
 
                     self.profile.setHttpUserAgent(self.DESKTOP_USER_AGENT)
-                    self.profile.clearHttpCache()
-                    self.profile.cookieStore().deleteAllCookies()
 
                 if hasattr(page, "certificateError"):
                     page.certificateError.connect(self._on_cert_error)
@@ -342,8 +342,14 @@ class EbaLoginDialog(QDialog):
         self.view.urlChanged.connect(self._on_url)
         layout.addWidget(self.view, 1)
 
-        # Sayfayi yukle
-        self.view.load(QUrl(eba_errors.EBA_URL))
+        # İlk yuklemeyi pencere yuzeyi hazir olur olmaz singleShot ile baslat (ilk istek race condition'ini onler)
+        QTimer.singleShot(0, self._initial_load)
+
+    def _initial_load(self):
+        if self.view and not self._loaded_once:
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setValue(15)
+            self.view.load(QUrl(eba_errors.EBA_URL))
 
     def _do_reload(self):
         self.error_banner.setVisible(False)
@@ -358,11 +364,19 @@ class EbaLoginDialog(QDialog):
 
     def _on_load_finished(self, ok):
         self.progress_bar.setVisible(False)
-        if not ok:
-            if not self.token:
-                self.error_banner.setVisible(True)
-        else:
+        if ok:
+            self._loaded_once = True
             self.error_banner.setVisible(False)
+        else:
+            if not self.token:
+                # İlk yuklemede asenkron motor baslangici gecikmisse 1 kez otomatik tekrar dene
+                if not self._retry_attempted:
+                    self._retry_attempted = True
+                    QTimer.singleShot(250, self._do_reload)
+                    return
+                self.error_banner.setVisible(True)
+            else:
+                self.error_banner.setVisible(False)
 
     def _on_cert_error(self, error):
         """MEB/EBA/e-Devlet alan adlarindaki SSL sertifika hatalarini tolere et.
