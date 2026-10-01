@@ -1,0 +1,14 @@
+[Unit]
+Description=Pardus ETAP Boot Time Sync for OTP Login (v2.4)
+After=network.target network-online.target
+Before=display-manager.service lightdm.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/etap-time-sync.sh
+TimeoutStartSec=30
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

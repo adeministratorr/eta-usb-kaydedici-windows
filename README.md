@@ -33,6 +33,9 @@ Tahta açısından oluşan sonuç Pardus sürümüyle aynıdır.
 - **Bilgisayarı Temizle**
   USB belleklere yeniden bulaşmaya neden olabilecek zararlı dosyaları, çalışan süreçleri ve kalıcılık kayıtlarını kontrol edip temizler.
 
+- **Okul Tahtalarına OTP (PIN) Tanımla (Sungur Entegrasyonu)**
+  USB bellek taşımaya gerek kalmadan, telefonunuzdaki dinamik (30 saniyede bir yenilenen) 6 haneli OTP kodu ile akıllı tahtalarda oturum açmanızı sağlar. Yerel okul sunucusu (Sungur) üzerinden okuldaki tüm tahtalara tek tıkla güvenle dağıtılır.
+
 ---
 
 ## Gerekenler
@@ -138,6 +141,73 @@ Program şu kontrolleri yapar:
 Kontrol tamamlandığında USB belleğin sahibini, kullanıcı adını ve yapılan kontrollerin sonuçlarını görebilirsiniz.
 
 Tüm kontroller **✓** olarak görünüyorsa USB bellek tahtada çalışmaya hazırdır.
+
+---
+
+## 5. Okul tahtalarına OTP (PIN) tanımlama (Sungur Entegrasyonu)
+
+### ❓ Bu özellik nedir ve ne işe yarar?
+Akıllı tahtalarda oturum açmak için USB bellek taşımak istemiyorsanız, USB'nizi unuttuysanız veya virüs bulaşma riskinden tamamen kurtulmak istiyorsanız **Dinamik OTP (PIN)** özelliğini kullanabilirsiniz.
+
+Bu özellik sayesinde:
+* **USB Taşımaya Son:** Sadece akıllı telefonunuzu kullanarak tahtayı saniyeler içinde açabilirsiniz.
+* **Sabit Şifre Yok:** Güvenliğiniz için sabit şifre kullanılmaz. Telefonunuzdaki kimlik doğrulayıcı uygulama (Google Authenticator vb.) **her 30 saniyede bir değişen tek kullanımlık 6 haneli kod** üretir.
+* **Tüm Sınıflar Tek Tıkla:** Okulunuzdaki yerel **Sungur Sunucusu** sayesinde sınıfları tek tek gezmenize gerek kalmaz; anahtarınız okuldaki tüm akıllı tahtalara tek tıkla otomatik olarak tanımlanır.
+
+---
+
+### ⚠️ "Okul Tahtalarına OTP (PIN) Tanımla" Düğmesi Neden Pasif (Tıklanamaz)?
+Program ana ekranında bu düğme **yalnızca bilgisayarınız okulun yerel ağına bağlıysa ve Sungur sunucusuna erişebiliyorsa aktifleşir**.
+
+* **Evde veya okul dışındaysanız:** Düğme pasif kalır ve altında `○ Sungur bulunamadı (Bu özellik yalnızca okul yerel ağında kullanılabilir)` uyarısı görünür. Çünkü tahtalara erişim sağlayan Sungur sunucusu sadece okulun yerel ağında çalışır.
+* **Okul ağındaysanız (Tahta ağı / Okul Wi-Fi):** Program otomatik olarak Sungur'u algılar, yeşil `● Okul ağı aktif — Sungur sunucusuna bağlandı` rozeti çıkar ve düğme tıklanabilir hale gelir.
+
+---
+
+### 📱 Adım Adım Kurulum ve Kullanım Rehberi
+
+#### 1. Adım: Başlatma ve EBA Girişi
+1. Bilgisayarınız okul ağına bağlıyken programı açın ve **🔑 Okul Tahtalarına OTP (PIN) Tanımla (Sungur)** düğmesine basın.
+2. Açılan pencereden EBA hesabınıza (e-Devlet veya MEBBİS ile) giriş yapın.
+3. EBA'daki adınız, kullanıcı adınız ve EBA ID'niz otomatik olarak ekrana gelecektir.
+
+#### 2. Adım: Telefonunuza Tanımlama (QR Kod)
+1. Telefonunuza ücretsiz bir TOTP uygulaması yükleyin (Örn: **Google Authenticator**, **FreeOTP**, **Microsoft Authenticator**).
+2. Uygulamayı açıp **+ (Hesap Ekle)** düğmesine basın ve **QR Kodunu Tara** seçeneğini seçin.
+3. Bilgisayar ekranındaki karekodu kameranızla okutun.
+4. Artık telefonunuzda okul tahtaları için 30 saniyede bir yenilenen 6 haneli kod üretilmeye başlayacaktır!
+
+#### 3. Adım: Tahtalara Dağıtma
+1. Ekrandaki **Sungur Sunucu** alanında okul yöneticinizin verdiği sunucu adresi (varsayılan: `http://etap-sungur.local:8080`) ve **Yönetici Parolası (Token)** yer alır.
+2. **🔌 Bağlantıyı Test Et** düğmesine basarak Sungur'un kaç tahtayla iletişimde olduğunu kontrol edin.
+3. İsterseniz **🔍 Tahtaları Test Et (Dry-Run)** ile tahtaların durumunu önceden görün.
+4. **🚀 Okuldaki Tüm Tahtalara Dağıt** düğmesine basın.
+5. Sungur saniyeler içinde okuldaki tüm tahtaların `/etc/otp-secrets.json` kütüğüne anahtarınızı güvenle işler ve işlem sonucunu tahta tahta ekranda raporlar.
+
+#### 4. Adım: Tahtada Oturum Açma
+* Herhangi bir sınıftaki akıllı tahtanın giriş ekranına gidin.
+* Kullanıcı adı kısmına adınızı (`adem.yuce` vb.) yazın.
+* Şifre alanına telefonunuzdaki **Google Authenticator uygulamasında o an görünen 6 haneli kodu** yazıp Enter'a basın.
+* Oturumunuz anında açılır!
+
+---
+
+### 💡 Sıkça Sorulan Sorular (SSS)
+
+**S: İnternet kesilirse tahtada OTP ile oturum açabilir miyim?**  
+**C:** Evet! TOTP (RFC 6238) matematiksel bir saat algoritmasıdır. Tahtanın ve telefonunuzun saati doğru olduğu sürece internet bağlantısına ihtiyaç duymadan çalışır.
+
+**S: Tahtadaki masaüstüm, ev dizinim veya dosyalarım silinir mi?**  
+**C:** Kesinlikle hayır! Sistem EBA ID'niz üzerinden tahtadaki mevcut hesabınızı bulur ve korur. Yalnızca kilit dosyasına yetkiniz eklenir.
+
+**S: Eski USB belleğim çalışmaya devam eder mi?**  
+**C:** Evet! USB anahtarınız ve OTP yöntemini aynı anda kullanabilirsiniz. İster USB takın, ister telefonunuzdaki kodu yazın.
+
+**S: Başka bir öğretmenin PIN yetkisi silinir mi?**  
+**C:** Hayır. Sungur sunucusu atomik birleştirme (merge) ve SHA-256 mühürleme tekniği kullanır. Yeni eklenen öğretmenler mevcut öğretmen listesine eklenir, kimsenin anahtarı ezilmez.
+
+**S: Telefonumu değiştirirsem ne yapmalıyım?**  
+**C:** Yeni telefonunuzla bu programa tekrar girip EBA doğrulaması yapın, **Yeni Anahtar** düğmesine basıp yeni QR kodu okutun ve tekrar **Tüm Tahtalara Dağıt** deyin. Eski kodunuz geçersiz olur, yenisi aktifleşir.
 
 ---
 
@@ -343,8 +413,11 @@ cd eta-usb-kaydedici-windows
 pip install -r requirements.txt
 pip install pyinstaller
 
-python -m PyInstaller --noconfirm --onefile --windowed --uac-admin --name "ETA-USB-Kaydedici" --version-file version_info.txt --icon assets/logo.ico --add-data "assets;assets" --collect-all PySide6 src/main.py
+python -m PyInstaller --noconfirm --onefile --windowed --name "ETA-USB-Kaydedici" --version-file version_info.txt --icon assets/logo.ico --add-data "assets;assets" --collect-all PySide6 src/main.py
 ```
+
+> **Önemli Güvenlik Notu (Sungur & Yerel Ağ):**
+> Sungur filo sunucusu ile iletişimde OTP sırları ve yönetici erişim token'ı aktarılmaktadır. Bu sebeple açık/şifresiz veya güvensiz ortak Wi-Fi ağlarında kullanılmamalı, üretim ortamında mutlaka **HTTPS (TLS)** kullanılmalıdır. Token'lar yerel Windows kayıt defterinde **DPAPI** ile şifrelenerek korunur.
 
 > `pyinstaller` yerine `python -m PyInstaller` kullanabilirsiniz.
 >
@@ -408,7 +481,7 @@ python3 -m pip install pyinstaller
 python3 -m PyInstaller --version
 ```
 
-Windows için kullanılacak son EXE dosyası (`--uac-admin`, `--version-file`, `pywin32`) yalnızca Windows üzerinde üretilebilir.
+Windows için kullanılacak son EXE dosyası (`--version-file`, `pywin32`) yalnızca Windows üzerinde üretilebilir.
 
 Mac üzerinde derleme yaparsanız Windows EXE'si değil, macOS için çalıştırılabilir bir uygulama oluşur.
 

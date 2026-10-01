@@ -1,5 +1,5 @@
 import string
-import random
+import secrets
 import binascii
 import pickle
 import json
@@ -28,11 +28,13 @@ def save_credentials_file(credentials_file, credentials_obj):
 
 def generate_random_password():
     """
-    Generates a random 8-character password for the user
+    Generates a random 8-character password for the user.
+    UI/tahta uyumlulugu icin uzunluk ve alfabe (harf+rakam) aynidir;
+    sadece kaynak kriptografiktir (secrets).
     """
     length = 8
     characters = string.ascii_letters + string.digits  # + '!#$&' string.punctuation
-    password = "".join(random.choice(characters) for i in range(length))
+    password = "".join(secrets.choice(characters) for i in range(length))
 
     return password
 

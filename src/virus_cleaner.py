@@ -16,9 +16,14 @@ biz kokteki .lnk/autorun/supheli dosyalari silip gizlenenleri
 ozyinelemeli geri aciyoruz ve .credentials'i koke iade ediyoruz.
 
 Guvenlik: kokteki .lnk'larin tamami + bilinen zararli isimler +
-calistirilabilir supheli uzantilar (.scr/.pif/.com/.bat/.vbs/.js + .ini/.bak/.bin;
-kokteki desktop.ini dahil) silinir.
-Bilinmeyen .exe'lere dokunulmaz, onay ekraninda listelenir.
+calistirilabilir supheli uzantilar (.scr/.pif/.com/.bat/.vbs/.js + .ini/.bak/.bin) silinir.
+Kokteki desktop.ini'ye virus yazar, kesin silinir (virüs artığı).
+Musallat yayilimi olan klasor taklidi .exe'ler (DH/ + yaninda DH.exe gibi,
+kok + alt klasorler) onayli silinir; buyuk (>1MB) eslesmeler mesru
+olabileceginden suspicious'ta listelenir.
+usbshow portu: alt klasorlerdeki .lnk/.inf artıkları + Temp'te *.com ve
+isimde gecen masquerade (*wuauclt* vb.) de onayli silinir.
+Diger bilinmeyen .exe'lere dokunulmaz, onay ekraninda listelenir.
 """
 
 import os
@@ -79,6 +84,12 @@ DELETE_EXTS = {".scr", ".pif", ".com", ".bat", ".vbs", ".js"}
 
 # Silinmez, onay ekraninda "elle bakin" diye listelenir
 REPORT_SUFFIX = ".exe"
+
+# Klasor taklidi .exe'ler icin guvenlik siniri: Musallat klonlari ~130KB
+# (132608 byte). Mesru tasinabilir uygulamalar genelde cok daha buyuktur;
+# yanlis pozitifleri onlemek icin buyuk (>1MB) klonlar otomatik silinmez,
+# suspicious listesinde gosterilir.
+CLONE_EXE_SIZE_LIMIT = 1 * 1024 * 1024
 
 
 # ---------- Windows dosya oznitelikleri (diger OS'te no-op) ----------
@@ -267,6 +278,108 @@ def _unique_dest(root, name):
         i += 1
 
 
+def _norm_clone(name):
+    """Klasor/.exe ikiz karsilastirmasi icin normalize et."""
+    try:
+        return (name or "").strip().casefold()
+    except Exception:
+        return (name or "").strip().lower()
+
+
+def _find_folder_clones(root):
+    """Musallat yayilimi: gizlenen klasorun yanina ayni isimli .exe.
+
+    Ornek: `DH/` klasoru + yaninda `DH.exe` (yaklasik 130KB). Koke + tum alt
+    klasorlere ozyinelemeli bakilir; ayni ebeveyndeki eslesmeler doner.
+    Donus: [{"rel": koke-goreli-yol, "size": byte, "hidden_twin": bool}].
+    Boyut filtresi uygulanmaz; buyuk/kucuk ayrimi scan_flash'ta yapilir."""
+
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Sistem / cop klasorlerine girme, taramada yok sayilanlari ele
+        dirnames[:] = [d for d in dirnames
+                       if d.lower() not in SKIP_DIRS
+                       and d.lower() != "__macosx"
+                       and not _is_os_junk(d)]
+        # Ayni ebeveyndeki klasor adlari (normalize -> gercek ad)
+        dir_map = {}
+        for d in dirnames:
+            if _is_os_junk(d):
+                continue
+            # Zulalama (isimsiz/etiket) klasorun kendisi ikiz sayilmaz
+            if _is_stash_name(d):
+                continue
+            dir_map.setdefault(_norm_clone(d), d)
+        if not dir_map:
+            continue
+        for fn in filenames:
+            if _is_os_junk(fn):
+                continue
+            if not fn.lower().endswith(REPORT_SUFFIX):
+                continue
+            if fn.lower() in KNOWN_BAD:
+                continue
+            stem = os.path.splitext(fn)[0]
+            twin = dir_map.get(_norm_clone(stem))
+            if not twin:
+                continue
+            full = os.path.join(dirpath, fn)
+            try:
+                size = os.path.getsize(full) if os.path.isfile(full) else 0
+            except Exception:
+                size = 0
+            try:
+                hidden_twin = is_hidden(os.path.join(dirpath, twin))
+            except Exception:
+                hidden_twin = False
+            try:
+                rel = os.path.relpath(full, root)
+            except Exception:
+                rel = fn
+            out.append({"rel": rel, "size": size, "hidden_twin": hidden_twin})
+    out.sort(key=lambda x: x["rel"].lower())
+    return out
+
+
+def _find_sub_virus_files(root):
+    """usbshow Form2 altdosya portu (guvenli alt kume): alt klasorlerdeki
+    .lnk + .inf artıkları. Koktekiler zaten ayri listelerde; burada sadece
+    kok disi (dirpath != root) taranir. .ini/.bak/.bin alt klasorlerde
+    mesru olabilir, dokunulmaz."""
+    lnks, infs = [], []
+    try:
+        root_norm = os.path.normcase(os.path.abspath(root))
+    except Exception:
+        root_norm = root
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames
+                       if d.lower() not in SKIP_DIRS
+                       and d.lower() != "__macosx"
+                       and not _is_os_junk(d)]
+        try:
+            is_root = os.path.normcase(os.path.abspath(dirpath)) == root_norm
+        except Exception:
+            is_root = (dirpath == root)
+        if is_root:
+            continue
+        for fn in filenames:
+            if _is_os_junk(fn):
+                continue
+            ln = fn.lower()
+            full = os.path.join(dirpath, fn)
+            try:
+                rel = os.path.relpath(full, root)
+            except Exception:
+                continue
+            if ln.endswith(".lnk"):
+                lnks.append(rel)
+            elif ln.endswith(".inf"):
+                infs.append(rel)
+    lnks.sort(key=str.lower)
+    infs.sort(key=str.lower)
+    return lnks, infs
+
+
 def scan_flash(root, volume_label=None):
     """Silmeden tarar. Bulgular sozlugu doner.
     volume_label verilirse (UI'daki cihaz listesinden) o kullanilir,
@@ -274,7 +387,7 @@ def scan_flash(root, volume_label=None):
     res = {"root": root, "autorun": False, "bad_exes": [],
            "shortcut_hits": [], "orphan_lnks": [], "hidden": [],
            "stash": [], "suspicious": [], "credentials": [], "error": "",
-           "label": ""}
+           "label": "", "folder_clones": [], "sub_lnks": [], "sub_infs": []}
     if not root or not os.path.isdir(root):
         res["error"] = "USB bağlı değil."
         return res
@@ -309,13 +422,41 @@ def scan_flash(root, volume_label=None):
                 res["orphan_lnks"].append(e)
         elif ext in DELETE_EXTS:
             res["bad_exes"].append(f"{e} (şüpheli uzantı)")
+        elif ln == "desktop.ini":
+            # Kokteki desktop.ini'ye virus yazar (usbshow da siler).
+            # Kesin silinecek: onayli silme listesinde.
+            res["bad_exes"].append(f"{e} (virüs artığı)")
         elif ext in (".ini", ".bak", ".bin"):
             # .ini/.bak/.bin kokte supheli sayilir, onayli silinir.
-            # Kokteki desktop.ini de bu kurala dahildir.
             # thumbs.db / .DS_Store _is_os_junk'ta eleniyor, korunur.
             res["bad_exes"].append(f"{e} (şüpheli uzantı)")
         elif ext == REPORT_SUFFIX:
             res["suspicious"].append(e)
+
+    # Musallat yayilimi: klasor adiyla ayni isimli .exe (kok + alt klasorler).
+    # Ornek: DH/ + yaninda DH.exe. Ayni ebeveyndeki eslesme guclu virus
+    # isaretidir. Kucuk (<=1MB) olanlar onayli silinir; buyuk (>1MB)
+    # olanlar mesru olabileceginden suspicious'ta listelenir.
+    try:
+        clones = _find_folder_clones(root)
+    except Exception:
+        clones = []
+    small = [c for c in clones if (c.get("size") or 0) <= CLONE_EXE_SIZE_LIMIT]
+    large = [c for c in clones if (c.get("size") or 0) > CLONE_EXE_SIZE_LIMIT]
+    res["folder_clones"] = [c["rel"] for c in small]
+    if small:
+        clone_roots = {os.path.basename(c["rel"]) for c in small}
+        # Kokteki kucuk klonlar yukarida suspicious'a dusmustu, oradan cikar
+        res["suspicious"] = [s for s in res["suspicious"] if s not in clone_roots]
+    for c in large:
+        rel = c["rel"]
+        # Kokteki buyuk klon zaten suspicious'ta (basename); alt klasordeki
+        # buyuk klon suspicious'a goreceli yolla eklenir.
+        if os.path.dirname(rel):
+            if rel not in res["suspicious"]:
+                res["suspicious"].append(rel)
+        elif os.path.basename(rel) not in res["suspicious"]:
+            res["suspicious"].append(os.path.basename(rel))
 
     res["hidden"] = [e for e in items if is_hidden(paths[e])]
     # Zulalama klasorleri: iki varyant
@@ -329,7 +470,15 @@ def scan_flash(root, volume_label=None):
                  and os.path.isfile(paths[e])}
     virus_signals = bool(res["autorun"] or res["bad_exes"]
                          or res["shortcut_hits"] or res["orphan_lnks"]
-                         or res["hidden"])
+                         or res["hidden"] or res["folder_clones"])
+    # usbshow Form2 altdosya portu: alt klasorlerdeki .lnk/.inf artıkları
+    try:
+        sub_lnks, sub_infs = _find_sub_virus_files(root)
+    except Exception:
+        sub_lnks, sub_infs = [], []
+    res["sub_lnks"] = sub_lnks
+    res["sub_infs"] = sub_infs
+    virus_signals = bool(virus_signals or sub_lnks or sub_infs)
     for d in sorted(dirs):
         if _is_os_junk(d):
             continue
@@ -355,6 +504,8 @@ def scan_flash(root, volume_label=None):
 
 def clean_flash(root, volume_label=None):
     """Tarar, bilinen zararlilari temizler, gizlileri acar,
+    kokteki desktop.ini + klasor taklidi .exe'leri (kok + alt klasorler) +
+    alt klasor .lnk/.inf artıklarını siler,
     zulalama klasorune (isimsiz veya surucu etiketli) tasinan icerigi
     koke iade eder, .credentials'i koke iade eder. Rapor doner."""
     rep = {"removed": [], "unhidden": [], "restored_items": [],
@@ -379,6 +530,15 @@ def clean_flash(root, volume_label=None):
         except Exception as e:
             rep["errors"].append(f"{name} silinemedi: {e}")
 
+    # Musallat klonlari: klasor adiyla ayni isimli .exe (kok + alt klasorler).
+    # Ornek: DH/ + DH.exe. Ayni ebeveyndeki eslesme silinir.
+    for rel in scan.get("folder_clones", []):
+        try:
+            _safe_remove(os.path.join(root, rel))
+            rep["removed"].append(f"{rel} (klasör taklidi)")
+        except Exception as e:
+            rep["errors"].append(f"{rel} silinemedi: {e}")
+
     # Kokteki TUM .lnk'lar (kanonik recete: del *.lnk)
     matched = {h["lnk"] for h in scan["shortcut_hits"]}
     for lnk in [h["lnk"] for h in scan["shortcut_hits"]] + scan["orphan_lnks"]:
@@ -388,6 +548,20 @@ def clean_flash(root, volume_label=None):
             rep["removed"].append(f"{lnk} {tag}")
         except Exception as e:
             rep["errors"].append(f"{lnk} silinemedi: {e}")
+
+    # usbshow Form2 altdosya portu: alt klasorlerdeki .lnk/.inf artıkları
+    for rel in scan.get("sub_lnks", []):
+        try:
+            _safe_remove(os.path.join(root, rel))
+            rep["removed"].append(f"{rel} (alt klasör kısayolu)")
+        except Exception as e:
+            rep["errors"].append(f"{rel} silinemedi: {e}")
+    for rel in scan.get("sub_infs", []):
+        try:
+            _safe_remove(os.path.join(root, rel))
+            rep["removed"].append(f"{rel} (alt klasör inf)")
+        except Exception as e:
+            rep["errors"].append(f"{rel} silinemedi: {e}")
 
     # Ozyinelemeli geri acma (kanonik: attrib -h -r -s /s /d)
     unhidden_count = 0
@@ -469,8 +643,13 @@ TEMP_VBS_SWEEP = True  # %TEMP% icindeki *.vbs'ler onay ekraninda listelenir
 
 
 def _sweep_dir(path):
-    """Klasordeki KNOWN_BAD + *.vbs + sistem-taklidi dosyalari.
-    OS bagimsiz, test edilebilir."""
+    """Klasordeki KNOWN_BAD + *.vbs/*.com + sistem-taklidi dosyalari.
+    OS bagimsiz, test edilebilir. usbshow Form4 portu: Temp'te isim
+    icinde gecen masquerade adlari (*wuauclt* vb.) + *.com da suphelidir;
+    gercek sistem dosyalari Temp'te yasamaz."""
+    # Masquerade taban adlari (uzantisiz): Temp'te substring eslesir
+    _MASQ_BASE = {n.lower().removesuffix(".exe") for n in MASQUERADE_NAMES}
+    _MASQ_BASE |= {"lmkamcx"}
     out = []
     try:
         for e in os.listdir(path):
@@ -479,7 +658,9 @@ def _sweep_dir(path):
                 continue
             ln = e.lower()
             if (ln in KNOWN_BAD or ln in MASQUERADE_NAMES
-                    or (TEMP_VBS_SWEEP and ln.endswith(".vbs"))):
+                    or (TEMP_VBS_SWEEP and ln.endswith(".vbs"))
+                    or ln.endswith(".com")
+                    or any(b in ln for b in _MASQ_BASE)):
                 out.append(full)
     except Exception:
         pass

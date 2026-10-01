@@ -1,0 +1,77 @@
+/* ETA USB Kaydedici - Pardus/MEB kurumsal QSS.
+   Duzen/metin/akisi degistirmez, yalnizca stil. kurtarma: dosya
+   okunamazsa uygulama ham Qt gorunumuyle acilir (run() sessiz gecer). */
+
+QPushButton {
+    background-color: #1E88E5;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 18px;
+    padding-right: 18px;
+}
+QPushButton:hover {
+    background-color: #42A5F5;
+}
+QPushButton:pressed {
+    background-color: #1565C0;
+}
+QPushButton:disabled {
+    background-color: #BDBDBD;
+    color: #616161;
+}
+QPushButton:focus {
+    border: 2px solid #90CAF9;
+}
+
+/* Tehlikeli eylem: USB'yi EBA Hesabından Sil */
+QPushButton#btnDelete {
+    background-color: #D32F2F;
+}
+QPushButton#btnDelete:hover {
+    background-color: #E53935;
+}
+QPushButton#btnDelete:pressed {
+    background-color: #B71C1C;
+}
+QPushButton#btnDelete:disabled {
+    background-color: #BDBDBD;
+    color: #616161;
+}
+
+QLineEdit, QComboBox {
+    border: 1px solid #BDBDBD;
+    border-radius: 6px;
+    padding: 8px;
+    background-color: white;
+    selection-background-color: #1E88E5;
+}
+QLineEdit:focus, QComboBox:focus {
+    border: 1px solid #1E88E5;
+}
+
+QTextEdit {
+    border: 1px solid #BDBDBD;
+    border-radius: 6px;
+    background-color: white;
+    padding: 6px;
+}
+
+QProgressBar {
+    border: none;
+    border-radius: 6px;
+    background-color: #E3F2FD;
+    text-align: center;
+    min-height: 12px;
+    max-height: 12px;
+}
+QProgressBar::chunk {
+    border-radius: 6px;
+    background-color: #1E88E5;
+}
+
+QCheckBox {
+    spacing: 8px;
+}

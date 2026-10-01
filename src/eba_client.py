@@ -25,10 +25,30 @@ def _headers():
     return {"origin": EBA_ORIGIN}
 
 
-def get_teacher_info(info_url, timeout=TIMEOUT):
+def new_session():
+    """Akis-local baglanti havuzu. Her worker kendi Session'ini acar/kapatir;
+    global paylasim yok (requests.Session thread-safe degil)."""
+    s = requests.Session()
+    s.headers.update(_headers())
+    return s
+
+
+def _http_get(url, timeout, session=None, **kw):
+    if session is not None:
+        return session.get(url, timeout=timeout, **kw)
+    return requests.get(url, timeout=timeout, **kw)
+
+
+def _http_post(url, timeout, session=None, **kw):
+    if session is not None:
+        return session.post(url, timeout=timeout, **kw)
+    return requests.post(url, timeout=timeout, **kw)
+
+
+def get_teacher_info(info_url, timeout=TIMEOUT, session=None):
     """Token redirect URL'sinden ogretmen bilgisi. (ok, data|hata)."""
     try:
-        r = requests.get(info_url, timeout=timeout)
+        r = _http_get(info_url, timeout=timeout, session=session)
     except Exception as e:
         return False, {"title": NO_CONNECTION[0], "message": NO_CONNECTION[1],
                        "action": NO_CONNECTION[2], "detail": str(e)}
@@ -66,12 +86,12 @@ def get_teacher_info(info_url, timeout=TIMEOUT):
                        "detail": f"eksik alan: {e}"}
 
 
-def reset_password(token, password, tckn, timeout=TIMEOUT):
+def reset_password(token, password, tckn, timeout=TIMEOUT, session=None):
     """UsbPasswordChangerV7. (ok, hata|None)."""
     try:
-        r = requests.post(url=EBA_PASSWORD_RESET_URL, headers=_headers(), timeout=timeout,
-                          data={"authCode": token, "newPass": password,
-                                "repPass": password, "user_tckn": tckn})
+        r = _http_post(url=EBA_PASSWORD_RESET_URL, headers=_headers(), timeout=timeout, session=session,
+                       data={"authCode": token, "newPass": password,
+                             "repPass": password, "user_tckn": tckn})
     except Exception as e:
         return False, {"title": NO_CONNECTION[0], "message": "Şifre EBA'ya kaydedilemedi.",
                        "action": NO_CONNECTION[2], "detail": str(e)}
@@ -83,12 +103,12 @@ def reset_password(token, password, tckn, timeout=TIMEOUT):
     return True, None
 
 
-def register_usb(tckn, password, eba_id, usb_serial, username, timeout=TIMEOUT):
+def register_usb(tckn, password, eba_id, usb_serial, username, timeout=TIMEOUT, session=None):
     """RegisterUsbUser. (ok, sonuc). sonuc: hata dict'i ya da {'detail':...}."""
     try:
-        r = requests.post(url=EBA_REGISTER_USB_URL, headers=_headers(), timeout=timeout,
-                          json={"tckn": tckn, "password": password, "eba_id": eba_id,
-                                "usb_serial": usb_serial, "username": username})
+        r = _http_post(url=EBA_REGISTER_USB_URL, headers=_headers(), timeout=timeout, session=session,
+                       json={"tckn": tckn, "password": password, "eba_id": eba_id,
+                             "usb_serial": usb_serial, "username": username})
     except Exception as e:
         return False, {"title": NO_CONNECTION[0], "message": "Kayıt isteği gönderilemedi.",
                        "action": NO_CONNECTION[2], "detail": str(e)}
@@ -112,10 +132,11 @@ def register_usb(tckn, password, eba_id, usb_serial, username, timeout=TIMEOUT):
                    "detail": f"{rc} {rt}".strip()}
 
 
-def delete_usb(tckn, timeout=TIMEOUT):
+def delete_usb(tckn, timeout=TIMEOUT, session=None):
     """DeleteUsbUser. (ok, sonuc). 006 = kayit yok (bilgi, hata degil)."""
     try:
-        r = requests.post(url=EBA_DELETE_USB_URL, params={"tckn": tckn}, timeout=timeout)
+        r = _http_post(url=EBA_DELETE_USB_URL, timeout=timeout, session=session,
+                       params={"tckn": tckn})
     except Exception as e:
         return False, {"title": NO_CONNECTION[0], "message": "Silme isteği gönderilemedi.",
                        "action": NO_CONNECTION[2], "detail": str(e),

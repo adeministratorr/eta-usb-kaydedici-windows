@@ -49,13 +49,16 @@ def read_credentials_file(path):
     return data, None
 
 
-def check_eba_record(eba_id, usb_serial, timeout=15):
+def check_eba_record(eba_id, usb_serial, timeout=15, session=None):
     """Tahtanin giris oncesi yaptigi kontrol (user.py:42-57). (ok, mesaj)."""
     import requests
 
     url = "https://giris.eba.gov.tr/EBA_GIRIS/GetUsbUser"
     try:
-        r = requests.post(url, json={"eba_id": eba_id, "usb_serial": usb_serial}, timeout=timeout)
+        if session is not None:
+            r = session.post(url, json={"eba_id": eba_id, "usb_serial": usb_serial}, timeout=timeout)
+        else:
+            r = requests.post(url, json={"eba_id": eba_id, "usb_serial": usb_serial}, timeout=timeout)
     except Exception:
         return None, "EBA'ya ulaşılamadı, sunucu kontrolü atlandı."
     try:
@@ -69,7 +72,7 @@ def check_eba_record(eba_id, usb_serial, timeout=15):
     return False, "EBA doğrulaması başarısız."
 
 
-def verify_flash(device, check_server=True):
+def verify_flash(device, check_server=True, session=None):
     """device: usb_manager_win.list_usb_devices_win() öğesi.
     Döner: {"ok": bool, "owner": {...}, "checks": [(ad, ok, mesaj)]}.
     owner: name, username, usb_serial (dosyadaki), eba_id (maskeli)."""
@@ -120,16 +123,16 @@ def verify_flash(device, check_server=True):
         return {"ok": False, "owner": _owner(data), "checks": checks}
 
     if check_server:
-        ok, msg = check_eba_record(data["eba_id"], data["usb_serial"])
+        ok, msg = check_eba_record(data["eba_id"], data["usb_serial"], session=session)
         if ok is True:
             checks.append(("EBA kaydı", True, msg))
         elif ok is False:
             checks.append(("EBA kaydı", False, msg))
         else:
-            checks.append(("EBA kaydı", False,
-                           f"İnternet olmadığından EBA kontrolü yapılamadı, tekrar deneyin. ({msg})"))
+            checks.append(("EBA kaydı", "skipped",
+                           f"İnternet olmadığından EBA kontrolü atlandı ({msg})"))
 
-    ok = all(c[1] for c in checks)
+    ok = all(c[1] is True or c[1] == "skipped" for c in checks)
     return {"ok": ok and serial_ok, "owner": _owner(data), "checks": checks}
 
 

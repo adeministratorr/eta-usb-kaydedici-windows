@@ -19,6 +19,68 @@ EBA_REGISTER_USB_URL = "https://giris.eba.gov.tr/EBA_GIRIS/RegisterUsbUser"
 EBA_DELETE_USB_URL = "https://giris.eba.gov.tr/EBA_GIRIS/DeleteUsbUser"
 EBA_ORIGIN = "http://api.etap.org.tr"
 
+# EBA giris yonlendirmesi icin izinli host'lar (UI degismez, sessiz dogrulama).
+# giris.eba.gov.tr: giris sayfasi; api.etap.org.tr: token callback (EBA_ORIGIN).
+_ALLOWED_EXACT = {"giris.eba.gov.tr", "api.etap.org.tr"}
+_ALLOWED_SUFFIX = (".eba.gov.tr", ".meb.gov.tr", ".etap.org.tr")
+
+
+def host_allowed(host):
+    """Yonlendirme host'u resmi EBA/MEB/ETAP alan adinda mi?"""
+    try:
+        h = (host or "").lower().strip().rstrip(".")
+        if not h:
+            return False
+        if h in _ALLOWED_EXACT:
+            return True
+        return h.endswith(_ALLOWED_SUFFIX)
+    except Exception:
+        return False
+
+
+def parse_eba_redirect(url_str):
+    """EBA web yonlendirmesinden token cikar (bos string = gecersiz).
+
+    Kurallar (orijinal davranim korunur):
+    - scheme http/https olmali, host izinli listede olmali
+    - URL'de 'api' gecmeli (2.0.6 on_webview_load_changed karsiligi)
+    - 'token' query/fragment'tan parse_qs ile alinir, yoksa regex fallback
+    - token strip'lenir, bos / >2048 / icinde bosluk varsa reddedilir
+    """
+    try:
+        from urllib.parse import urlparse, parse_qs, unquote
+        import re
+        s = url_str or ""
+        if "api" not in s.lower() or "token=" not in s:
+            return ""
+        p = urlparse(s)
+        if (p.scheme or "").lower() not in ("http", "https"):
+            return ""
+        if not host_allowed(p.hostname or ""):
+            return ""
+        token = ""
+        try:
+            q = parse_qs(p.query or "")
+            f = parse_qs(p.fragment or "")
+            vals = (q.get("token") or []) + (q.get("Token") or []) + (f.get("token") or [])
+            if vals:
+                token = (vals[0] or "")
+        except Exception:
+            token = ""
+        if not token:
+            m = re.search(r"token=([^&#;\s\"'<>]+)", s)
+            if m:
+                try:
+                    token = unquote(m.group(1) or "")
+                except Exception:
+                    token = m.group(1) or ""
+        token = (token or "").strip().strip("\"'")
+        if not token or len(token) > 2048 or any(c.isspace() for c in token):
+            return ""
+        return token
+    except Exception:
+        return ""
+
 
 def parse_result_code(obj: dict) -> tuple[str, str, str]:
     """(code_suffix, result_code, result_text). Parse guard'lı: split patlamaz."""
