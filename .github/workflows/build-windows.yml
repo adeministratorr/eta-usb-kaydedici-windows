@@ -38,10 +38,13 @@ jobs:
             --version-file version_info.txt `
             --icon assets/logo.ico `
             --add-data "assets;assets" `
-            --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebEngineCore `
-            --hidden-import PySide6.QtWebChannel --hidden-import PySide6.QtNetwork `
-            --hidden-import PySide6.QtPrintSupport `
-            --hidden-import qrcode --hidden-import PIL --hidden-import PIL.Image `
+            --collect-all PySide6.QtWebEngineWidgets `
+            --collect-all PySide6.QtWebEngineCore `
+            --collect-all PySide6.QtWebChannel `
+            --collect-all PySide6.QtNetwork `
+            --collect-all PySide6.QtPrintSupport `
+            --collect-all qrcode `
+            --hidden-import PIL --hidden-import PIL.Image `
             --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick `
             --exclude-module PySide6.QtQuickWidgets --exclude-module PySide6.Qt3DCore `
             --exclude-module PySide6.Qt3DRender --exclude-module PySide6.Qt3DInput `

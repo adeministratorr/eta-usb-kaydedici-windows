@@ -11,9 +11,13 @@ import os
 import sys
 import html
 
+# Windows'ta yönetici (admin/elevated) oturumlarda Chromium sandbox çökmesini engelle
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox")
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6.QtCore import Qt, QUrl, QThread, QTimer, Signal, QSettings, QStandardPaths
+from PySide6.QtCore import Qt, QUrl, QThread, QTimer, Signal, QSettings, QStandardPaths, QCoreApplication
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -220,23 +224,74 @@ def app_icon():
 
 class EbaLoginDialog(QDialog):
     """EBA giris + token yakalama. 2.0.6 on_webview_load_changed karsiligi:
-    URL'de 'api' ve 'token=' gorunce token'i al, kapat."""
+    URL'de 'api' ve 'token=' gorunce token'i al, kapat.
+
+    v1.1 kararlı mimarisi korunur:
+    - Dogrudan QWebEngineView ile acilir, temiz ve tam otomatiktir.
+    - Masaustu Chrome User-Agent ve SSL sertifika yonetimi ile sayfa engelsiz yuklenir.
+    - Kullanici giris yaptigi anda token arka planda yakalanir ve pencere kendiliginden kapanir.
+    """
 
     login_done = Signal(str, str)  # token, info_url
+
+    # EBA WAF ve bot korumasinin QtWebEngine'i bloklamasini engelleyen standart Chrome User-Agent
+    DESKTOP_USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    )
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("EBA Giriş")
-        self.resize(900, 650)
+        self.resize(960, 680)
         self.token = ""
+        self.view = None
+
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        # Ust Baslik ve Yenile Butonu
+        top_bar = QHBoxLayout()
+        header_vbox = QVBoxLayout()
         head = QLabel("EBA Girişi")
-        head.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        layout.addWidget(head)
+        head.setStyleSheet("font-size: 15px; font-weight: bold; color: #1565C0;")
+        header_vbox.addWidget(head)
+
         sub = QLabel("Aşağıdaki pencereden EBA Hesabınıza giriş yapınız:")
-        sub.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        layout.addWidget(sub)
-        self.profile = None
+        sub.setStyleSheet("color: #424242; font-size: 12px;")
+        header_vbox.addWidget(sub)
+        top_bar.addLayout(header_vbox, 1)
+
+        self.btn_reload = QPushButton("🔄 Yenile")
+        self.btn_reload.setToolTip("Sayfayı yeniden yükle")
+        self.btn_reload.clicked.connect(self._do_reload)
+        top_bar.addWidget(self.btn_reload)
+
+        layout.addLayout(top_bar)
+
+        # İlerleme Cubugu (Sayfa yuklenirken ince mavi cizgi)
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setFixedHeight(3)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("QProgressBar { border: none; background-color: #E0E0E0; } "
+                                       "QProgressBar::chunk { background-color: #1565C0; }")
+        layout.addWidget(self.progress_bar)
+
+        # Hata Bildirim Seridi (Sayfa baglanti hatasi verirse gorunur)
+        self.error_banner = QWidget(self)
+        self.error_banner.setStyleSheet("background-color: #FFEBEE; border: 1px solid #FFCDD2; border-radius: 4px; padding: 6px;")
+        err_layout = QHBoxLayout(self.error_banner)
+        err_layout.setContentsMargins(8, 4, 8, 4)
+        self.lbl_error = QLabel("⚠️ EBA Giriş Sayfası yüklenemedi. Lütfen internet bağlantınızı kontrol ediniz.", self.error_banner)
+        self.lbl_error.setStyleSheet("color: #C62828; font-weight: bold; font-size: 11px;")
+        err_layout.addWidget(self.lbl_error, 1)
+        self.btn_retry = QPushButton("🔄 Yeniden Dene", self.error_banner)
+        self.btn_retry.clicked.connect(self._do_reload)
+        err_layout.addWidget(self.btn_retry)
+        self.error_banner.setVisible(False)
+        layout.addWidget(self.error_banner)
+
         if not HAS_WEBENGINE:
             msg = QLabel(
                 "QtWebEngine kurulu değil. EBA girişi için gerekli.\n\n"
@@ -246,39 +301,84 @@ class EbaLoginDialog(QDialog):
                 "pip install --force-reinstall PySide6"
             )
             msg.setWordWrap(True)
-            msg.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            msg.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            msg.setStyleSheet("color: #C62828; padding: 16px; font-size: 12px;")
             layout.addWidget(msg, 1)
             btns = QDialogButtonBox(QDialogButtonBox.Close)
             btns.rejected.connect(self.reject)
             layout.addWidget(btns)
             return
 
-        # Pardus 2.0.6 standard: Configure isolated profile with NoCache and NoPersistentCookies
+        # WebEngine Gorunumu (1. Oneri: view'in kendi sayfasi ve profili uzerinden yapilandirma)
+        # Sahiplik (ownership) ve IPC kopmasi riskini sifirlar, NoCache ve cerez izolasyonu korunur.
+        self.view = QWebEngineView(self)
+        self.profile = None
         try:
-            self.profile = QWebEngineProfile(self)
-            if hasattr(QWebEngineProfile, "HttpCacheType"):
-                self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
-            elif hasattr(QWebEngineProfile, "NoCache"):
-                self.profile.setHttpCacheType(QWebEngineProfile.NoCache)
+            page = self.view.page()
+            if page:
+                self.profile = page.profile()
+                if self.profile:
+                    if hasattr(QWebEngineProfile, "HttpCacheType"):
+                        self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
+                    elif hasattr(QWebEngineProfile, "NoCache"):
+                        self.profile.setHttpCacheType(QWebEngineProfile.NoCache)
 
-            if hasattr(QWebEngineProfile, "PersistentCookiesPolicy"):
-                self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
-            elif hasattr(QWebEngineProfile, "NoPersistentCookies"):
-                self.profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+                    if hasattr(QWebEngineProfile, "PersistentCookiesPolicy"):
+                        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
+                    elif hasattr(QWebEngineProfile, "NoPersistentCookies"):
+                        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
 
-            self.profile.clearHttpCache()
-            self.profile.cookieStore().deleteAllCookies()
-            page = QWebEnginePage(self.profile, self)
-            self.view = QWebEngineView(self)
-            self.view.setPage(page)
+                    self.profile.setHttpUserAgent(self.DESKTOP_USER_AGENT)
+                    self.profile.clearHttpCache()
+                    self.profile.cookieStore().deleteAllCookies()
+
+                if hasattr(page, "certificateError"):
+                    page.certificateError.connect(self._on_cert_error)
         except Exception:
-            self.view = QWebEngineView(self)
+            pass
 
         self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.view.load(QUrl(eba_errors.EBA_URL))
+        self.view.loadProgress.connect(self._on_load_progress)
+        self.view.loadFinished.connect(self._on_load_finished)
         self.view.urlChanged.connect(self._on_url)
         layout.addWidget(self.view, 1)
+
+        # Sayfayi yukle
+        self.view.load(QUrl(eba_errors.EBA_URL))
+
+    def _do_reload(self):
+        self.error_banner.setVisible(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(10)
+        if self.view:
+            self.view.reload()
+
+    def _on_load_progress(self, progress):
+        self.progress_bar.setVisible(progress < 100)
+        self.progress_bar.setValue(progress)
+
+    def _on_load_finished(self, ok):
+        self.progress_bar.setVisible(False)
+        if not ok:
+            if not self.token:
+                self.error_banner.setVisible(True)
+        else:
+            self.error_banner.setVisible(False)
+
+    def _on_cert_error(self, error):
+        """MEB/EBA/e-Devlet alan adlarindaki SSL sertifika hatalarini tolere et.
+
+        Host-bazli eslesme: 'eba.gov.tr.evil.com' gibi alt-string tuzaklari
+        kabul edilmez; yalnizca alan adinin kendisi veya alt alan adlari gecer.
+        """
+        try:
+            host = error.url().host().lower().strip().rstrip(".")
+            allowed = ("eba.gov.tr", "meb.gov.tr", "turkiye.gov.tr", "etap.org.tr")
+            if host and any(host == h or host.endswith("." + h) for h in allowed):
+                error.acceptCertificate()
+                return True
+        except Exception:
+            pass
+        return False
 
     def _clear_session(self):
         """Clears all session cookies and HTTP cache to prevent account persistence on shared PCs."""
@@ -286,6 +386,11 @@ class EbaLoginDialog(QDialog):
             if self.profile:
                 self.profile.clearHttpCache()
                 self.profile.cookieStore().deleteAllCookies()
+            else:
+                prof = QWebEngineProfile.defaultProfile()
+                if prof:
+                    prof.clearHttpCache()
+                    prof.cookieStore().deleteAllCookies()
         except Exception:
             pass
 
@@ -1703,6 +1808,10 @@ def run():
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    except Exception:
+        pass
+    try:
+        QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     except Exception:
         pass
     app = QApplication(sys.argv)

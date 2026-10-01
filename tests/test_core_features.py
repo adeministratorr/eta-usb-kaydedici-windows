@@ -234,3 +234,26 @@ def test_dpapi_error_handling_mock(monkeypatch):
 
     result = dpapi_win.protect_secret("test_token")
     assert result is None
+
+
+def test_eba_login_dialog_page_profile_binding():
+    """Smoke test: Ensures EbaLoginDialog properly binds view.page() and configures profile
+    without losing ownership or leaving uninitialized detached pages (Option 1 verification)."""
+    import os
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    try:
+        from PySide6.QtWidgets import QApplication
+        from main_window import EbaLoginDialog, HAS_WEBENGINE
+    except ImportError:
+        pytest.skip("PySide6 not available in this test environment")
+
+    if not HAS_WEBENGINE:
+        pytest.skip("QtWebEngine not installed in this environment")
+
+    app = QApplication.instance() or QApplication([])
+    dlg = EbaLoginDialog()
+    assert dlg.view is not None
+    assert dlg.view.page() is not None
+    assert dlg.profile is not None
+    assert dlg.view.page().profile() == dlg.profile
+    dlg.close()
